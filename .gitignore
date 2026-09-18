@@ -15,3 +15,7 @@ yarn.lock
 # Docs
 docs/.vitepress/dist
 docs/.vitepress/cache
+
+# Claude
+CLAUDE.md
+/specs/*
