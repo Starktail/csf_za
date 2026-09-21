@@ -27,6 +27,18 @@ class TestCustomBankStatementImport(FrappeTestCase):
 		assert bank_statement_import.modify_uploaded_bank_statement.called
 
 
+def get_bank_group_account(company):
+	"""
+	The Bank group account, resolved per company — its abbreviation suffix differs per site
+	"""
+	return frappe.db.get_value(
+		"Account",
+		{"company": company, "is_group": 1, "account_type": "Bank"},
+		"name",
+		order_by="lft asc",
+	)
+
+
 def create_bank_account(bank_name=default_bank, account_name="_Test Bank", company=default_company):
 	try:
 		gl_account = frappe.get_doc(
@@ -34,7 +46,7 @@ def create_bank_account(bank_name=default_bank, account_name="_Test Bank", compa
 				"doctype": "Account",
 				"company": company,
 				"account_name": account_name,
-				"parent_account": "Bank Accounts - SP",
+				"parent_account": get_bank_group_account(company),
 				"account_number": "1",
 			}
 		).insert(ignore_if_duplicate=True)
