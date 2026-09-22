@@ -70,6 +70,9 @@ frappe.ui.form.on("Value-added Tax Return", {
   date_to(frm) {
     frm.trigger("clear_gl_entries_after_date_change");
   },
+  include_previous_period_transactions(frm) {
+    frm.trigger("clear_gl_entries_after_date_change");
+  },
   clear_gl_entries_after_date_change(frm) {
     // Clear the Journal Entries table
     if (frm.doc.gl_entries.length !== 0) {

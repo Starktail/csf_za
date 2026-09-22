@@ -8,6 +8,7 @@
  "field_order": [
   "company",
   "tax_accounts",
+  "deferral_lookback_months",
   "transaction_classification_section",
   "transaction_classification",
   "html_fsvu",
@@ -144,6 +145,13 @@
    "options": "Value-added Tax Return Settings Account"
   },
   {
+   "default": "60",
+   "description": "How far back a return looks for transactions not yet returned, when Include transactions from previous period not yet returned is ticked. Defaults to 60 months, the SARS five-year input tax claim window, when left blank.",
+   "fieldname": "deferral_lookback_months",
+   "fieldtype": "Int",
+   "label": "Deferral Lookback (Months)"
+  },
+  {
    "fieldname": "input_capital_local",
    "fieldtype": "Dynamic Link",
    "label": "A. Capital goods and/or services supplied to you (local)",
@@ -178,7 +186,7 @@
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2025-11-18 11:59:14.360510",
+ "modified": "2026-09-21 10:25:32.089730",
  "modified_by": "Administrator",
  "module": "Tax Compliance",
  "name": "Value-added Tax Return Settings",

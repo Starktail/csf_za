@@ -15,6 +15,7 @@
   "date_from",
   "column_break_tqyp",
   "date_to",
+  "include_previous_period_transactions",
   "tab_output_tax",
   "heading_supply_of_goods_andor_services_by_you",
   "section_break_xecb",
@@ -825,7 +826,8 @@
   },
   {
    "fieldname": "section_break_bggd",
-   "fieldtype": "Section Break"
+   "fieldtype": "Section Break",
+   "label": "Period Selection"
   },
   {
    "fieldname": "date_from",
@@ -844,6 +846,13 @@
    "in_list_view": 1,
    "label": "Date to",
    "reqd": 1
+  },
+  {
+   "default": "0",
+   "description": "Sweeps in transactions posted before Date from that are not yet on a submitted return. How far back is set by Deferral Lookback (Months) in Value-added Tax Return Settings.",
+   "fieldname": "include_previous_period_transactions",
+   "fieldtype": "Check",
+   "label": "Include transactions from previous period not yet returned"
   },
   {
    "fieldname": "company",
@@ -923,7 +932,7 @@
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2024-04-24 14:47:38.960644",
+ "modified": "2026-09-21 10:25:32.089730",
  "modified_by": "Administrator",
  "module": "Tax Compliance",
  "name": "Value-added Tax Return",

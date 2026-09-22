@@ -27,6 +27,8 @@ First, create a **Value-added Tax Return Settings** document for each Company in
 
     This mapping allows the system to automatically classify any transaction originating from a Sales Invoice or Purchase Invoice.
 
+6.  **Deferral Lookback (Months)**: How far back a return reaches when **Include transactions from previous period not yet returned** is ticked on the return itself (see [2.1. Fetching Transactions](#21-fetching-transactions)). Leave it blank to use the default of 60 months, the SARS five-year input tax claim window.
+
 ![VAT categories mapping](images/vat-categories.gif)
 
 ### 1.2. Account Settings for Manual Journal Entries
@@ -55,6 +57,16 @@ Click the **Get transactions for period** button. The system will:
 *   Fetch related Sales Invoices and Purchase Invoices to find zero-rated transactions.
 *   Attempt to classify each transaction based on the setup you completed.
 *   Populate the **Transactions** table at the bottom of the form with the results.
+
+**Including transactions from a previous period**
+
+Invoices and journals are sometimes captured after the return covering their posting date has already been filed. Because the return only looks at its own date range, those late transactions would otherwise never be reported.
+
+Tick **Include transactions from previous period not yet returned** in the **Period Selection** section to sweep them in. The return then also fetches transactions posted before **Date From**, reaching back by the **Deferral Lookback (Months)** set in Value-added Tax Return Settings.
+
+A prior-period transaction is only included if it is not already on a **submitted** return for the same company — so nothing is claimed twice. Returns still in draft, and cancelled returns, do not hold a transaction back. Transactions inside the current period are never affected by this rule.
+
+Changing the checkbox clears the **Transactions** table, so re-fetch after ticking it.
 
 ### 2.2. Classifying and Reviewing Transactions
 

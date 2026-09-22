@@ -4,11 +4,15 @@
 import frappe
 from frappe import _
 from frappe.model.document import Document
+from frappe.utils import add_months, cint, getdate
 from pypika import Case
 
 from csf_za.tax_compliance.doctype.value_added_tax_return_settings.value_added_tax_return_settings import (
 	VAT_RETURN_SETTING_FIELD_MAP,
 )
+
+# SARS allows input tax to be claimed up to five years after the tax period it belongs to
+DEFAULT_DEFERRAL_LOOKBACK_MONTHS = 60
 
 
 class ValueaddedTaxReturn(Document):
@@ -171,6 +175,59 @@ class ValueaddedTaxReturn(Document):
 				)
 			)
 
+	@property
+	def deferral_lookback_months(self):
+		"""
+		Number of months a deferral sweep reaches back before Date from
+		"""
+		vat_return_settings = frappe.get_cached_doc("Value-added Tax Return Settings", self.company)
+		return cint(vat_return_settings.deferral_lookback_months) or DEFAULT_DEFERRAL_LOOKBACK_MONTHS
+
+	@property
+	def query_date_from(self):
+		"""
+		Lower bound of the transaction query, widened when deferred transactions are included
+		"""
+		if not self.include_previous_period_transactions:
+			return self.date_from
+
+		return add_months(getdate(self.date_from), -self.deferral_lookback_months)
+
+	def get_returned_vouchers(self):
+		"""
+		Vouchers already reported on a submitted return for this company
+		"""
+		gl_entry_row = frappe.qb.DocType("Value-added Tax Return GL Entry")
+		tax_return = frappe.qb.DocType("Value-added Tax Return")
+
+		rows = (
+			frappe.qb.from_(gl_entry_row)
+			.join(tax_return)
+			.on(tax_return.name == gl_entry_row.parent)
+			.select(gl_entry_row.voucher_type, gl_entry_row.voucher_no)
+			.distinct()
+			.where((tax_return.company == self.company) & (tax_return.docstatus == 1))
+		).run()
+
+		return set(rows)
+
+	def exclude_previously_returned(self, gl_entries):
+		"""
+		Drop prior-period rows whose voucher is already on a submitted return
+		"""
+		if not self.include_previous_period_transactions:
+			return gl_entries
+
+		returned_vouchers = self.get_returned_vouchers()
+		date_from = getdate(self.date_from)
+
+		return [
+			entry
+			for entry in gl_entries
+			if getdate(entry.posting_date) >= date_from
+			or (entry.voucher_type, entry.voucher_no) not in returned_vouchers
+		]
+
 	@frappe.whitelist()
 	def get_gl_entries(self):
 		"""
@@ -271,7 +328,7 @@ class ValueaddedTaxReturn(Document):
 			)
 			.where(
 				(gle.company == self.company)
-				& (gle.posting_date >= self.date_from)
+				& (gle.posting_date >= self.query_date_from)
 				& (gle.posting_date <= self.date_to)
 				& account_condition
 			)
@@ -294,7 +351,7 @@ class ValueaddedTaxReturn(Document):
 				)
 			)
 
-		result = query.run(as_dict=True)
+		result = self.exclude_previously_returned(query.run(as_dict=True))
 
 		return self.process_gl_entries(result, classified_accounts=classified_accounts)
 
@@ -416,7 +473,9 @@ class ValueaddedTaxReturn(Document):
 					)
 					if default_account:
 						classification = frappe.get_cached_value(
-							"Account", default_account, "custom_vat_return_debit_classification"
+							"Account",
+							default_account,
+							"custom_vat_return_debit_classification",
 						)
 						if classification:
 							classifications.add(classification)
@@ -448,11 +507,15 @@ class ValueaddedTaxReturn(Document):
 					voucher.incl_tax_amount = amount
 					if voucher.general_ledger_debit:
 						voucher.classification = frappe.get_cached_value(
-							"Account", voucher.account, "custom_vat_return_debit_classification"
+							"Account",
+							voucher.account,
+							"custom_vat_return_debit_classification",
 						)
 					else:
 						voucher.classification = frappe.get_cached_value(
-							"Account", voucher.account, "custom_vat_return_credit_classification"
+							"Account",
+							voucher.account,
+							"custom_vat_return_credit_classification",
 						)
 					voucher.classification_debugging += (
 						f"\n🚀 [exempt JE] account='{voucher.account}'"
@@ -500,7 +563,10 @@ class ValueaddedTaxReturn(Document):
 								None,
 							)
 						if contra_entry_with_same_amount:
-							filtered_out += [contra_entry_with_same_amount, journal_entry]
+							filtered_out += [
+								contra_entry_with_same_amount,
+								journal_entry,
+							]
 
 				filtered_journal_entries = [
 					je_entry for je_entry in item.linked_journal_entries if je_entry not in filtered_out
@@ -590,7 +656,10 @@ class ValueaddedTaxReturn(Document):
 				# accounts exist in the same JE (multiple VAT legs).
 				if this_tax_jea and non_tax_entries:
 					this_idx = this_tax_jea.journal_entry_account_idx or 0
-					non_tax_sorted = sorted(non_tax_entries, key=lambda je: je.journal_entry_account_idx or 0)
+					non_tax_sorted = sorted(
+						non_tax_entries,
+						key=lambda je: je.journal_entry_account_idx or 0,
+					)
 					if this_gl_debit:
 						preceding = [
 							je
