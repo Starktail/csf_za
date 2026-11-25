@@ -1,0 +1,26 @@
+<table class="table table-bordered table-sm">
+	<thead>
+		<tr>
+			<th>{{ _("Voucher") }}</th>
+			<th>{{ _("Posting Date") }}</th>
+			<th>{{ _("Posted By") }}</th>
+			<th>{{ _("Posted On") }}</th>
+		</tr>
+	</thead>
+	<tbody>
+		{% for voucher in vouchers %}
+		<tr>
+			<td>
+				{{ _(voucher.voucher_type) | e }}
+				<a href="{{ frappe.utils.get_url_to_form(voucher.voucher_type, voucher.voucher_no) | e }}">{{ voucher.voucher_no | e }}</a>
+			</td>
+			<td>{{ frappe.format(voucher.posting_date, {"fieldtype": "Date"}) | e }}</td>
+			<td>{{ frappe.get_fullname(voucher.owner) | e }}</td>
+			<td>{{ frappe.format(voucher.creation, {"fieldtype": "Datetime"}) | e }}</td>
+		</tr>
+		{% endfor %}
+	</tbody>
+</table>
+{% if total > vouchers | length %}
+<p class="text-muted">{{ _("and {0} more").format(total - vouchers | length) }}</p>
+{% endif %}
