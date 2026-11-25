@@ -165,10 +165,22 @@ class ValueaddedTaxReturn(Document):
 		self.total_vat_payable_refundable = self.total_output_tax - self.total_input_tax
 
 	def before_submit(self):
+		self.validate_transactions_retrieved()
 		self.validate_all_transactions_classified()
 
 	def on_submit(self):
 		LateEntryCheck(self).record()
+
+	def validate_transactions_retrieved(self):
+		"""
+		Block an unprepared return, whose missing entries the late-entry check cannot see
+		"""
+		if self.gl_entries:
+			return
+
+		check = LateEntryCheck(self)
+		if check.can_run and check.ledger_has_transactions():
+			frappe.throw(_("Retrieve transactions for the period before submitting"))
 
 	def validate_all_transactions_classified(self):
 		"""
@@ -374,6 +386,22 @@ class ValueaddedTaxReturn(Document):
 		result = self.exclude_previously_returned(query.run(as_dict=True))
 
 		return self.process_gl_entries(result, classified_accounts=classified_accounts)
+
+	@frappe.whitelist(methods=["POST"])
+	def get_late_entry_summary(self):
+		return LateEntryCheck(self).summary()
+
+	@frappe.whitelist(methods=["POST"])
+	def get_late_gl_entries(self):
+		"""
+		Classified rows for every late voucher, not just the dialog's capped list
+		"""
+		late_vouchers = LateEntryCheck(self).late_vouchers
+		return [
+			entry
+			for entry in self.get_gl_entries()
+			if (entry.voucher_type, entry.voucher_no) in late_vouchers
+		]
 
 	def process_gl_entries(self, gl_entries, classified_accounts=None):
 		"""

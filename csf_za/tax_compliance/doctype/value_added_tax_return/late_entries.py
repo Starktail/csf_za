@@ -87,6 +87,25 @@ class LateEntryCheck:
 			)
 		)
 
+	def ledger_has_transactions(self):
+		"""
+		Whether the period holds any VAT-impacting voucher at all, whenever it was created
+		"""
+		gle = frappe.qb.DocType("GL Entry")
+		return bool(self.ledger_query(gle).select(gle.name).limit(1).run())
+
+	def summary(self):
+		"""
+		The submit dialog's payload: the true count and the capped voucher table
+		"""
+		if not self.can_run:
+			return {"checked": False, "reason": "settings_missing"}
+
+		summary = {"checked": True, "total": len(self.late_vouchers)}
+		if self.late_vouchers:
+			summary["html"] = self.render_html(self.LIST_LIMIT)
+		return summary
+
 	def render_html(self, limit=None):
 		"""
 		The voucher table, shared by the submit dialog and the timeline entry

@@ -142,3 +142,64 @@ class TestValueaddedTaxReturnLateEntries(ValueAddedTaxReturnFixtures, FrappeTest
 		vat_return.save()
 
 		self.assertRaisesRegex(frappe.ValidationError, "unclassified", vat_return.submit)
+
+	def test_unprepared_return_with_ledger_activity_is_blocked(self):
+		self.create_journal_entry(IN_PERIOD)
+		vat_return = self.create_return(CURRENT_PERIOD)
+
+		self.assertRaisesRegex(frappe.ValidationError, "Retrieve transactions", vat_return.submit)
+
+	def test_nil_return_submits(self):
+		self.create_journal_entry("2025-10-01")
+		vat_return = self.create_return(CURRENT_PERIOD)
+
+		vat_return.submit()
+
+		self.assertEqual(vat_return.docstatus, 1)
+
+	def test_empty_return_with_only_cancelled_activity_submits(self):
+		self.create_journal_entry(IN_PERIOD).cancel()
+		vat_return = self.create_return(CURRENT_PERIOD)
+
+		vat_return.submit()
+
+		self.assertEqual(vat_return.docstatus, 1)
+
+	def test_summary_caps_the_list_and_reports_the_true_total(self):
+		vat_return = self.create_return(CURRENT_PERIOD)
+		late_entries = [
+			self.create_journal_entry(IN_PERIOD) for _index in range(LateEntryCheck.LIST_LIMIT + 1)
+		]
+
+		summary = vat_return.get_late_entry_summary()
+
+		self.assertEqual(summary["total"], LateEntryCheck.LIST_LIMIT + 1)
+		self.assertIn(late_entries[-2].name, summary["html"])
+		self.assertNotIn(late_entries[-1].name, summary["html"])
+		self.assertIn("and 1 more", summary["html"])
+
+	def test_summary_without_late_vouchers_has_no_html(self):
+		vat_return = self.prepared_return()
+
+		self.assertEqual(vat_return.get_late_entry_summary(), {"checked": True, "total": 0})
+
+	def test_summary_reports_missing_settings_rather_than_throwing(self):
+		vat_return = self.create_return(CURRENT_PERIOD)
+		frappe.delete_doc("Value-added Tax Return Settings", self.company)
+
+		self.assertEqual(
+			vat_return.get_late_entry_summary(), {"checked": False, "reason": "settings_missing"}
+		)
+
+	def test_late_gl_entries_cover_every_late_voucher_and_leg(self):
+		vat_return = self.create_return(CURRENT_PERIOD)
+		captured = self.create_journal_entry(IN_PERIOD)
+		self.populate(vat_return)
+		late_entries = [self.create_journal_entry(IN_PERIOD) for _index in range(LateEntryCheck.LIST_LIMIT)]
+		two_legs = self.create_journal_entry(IN_PERIOD, vat_lines=2)
+
+		voucher_numbers = [row.voucher_no for row in vat_return.get_late_gl_entries()]
+
+		self.assertNotIn(captured.name, voucher_numbers)
+		self.assertEqual(set(voucher_numbers), {entry.name for entry in [*late_entries, two_legs]})
+		self.assertEqual(voucher_numbers.count(two_legs.name), 2)

@@ -82,27 +82,24 @@ class ValueAddedTaxReturnFixtures:
 		settings.deferral_lookback_months = 12
 		settings.save()
 
-	def create_journal_entry(self, posting_date):
+	def create_journal_entry(self, posting_date, vat_lines=1):
 		"""
-		A submitted VAT-bearing journal the classification engine can classify on its own
+		A submitted VAT-bearing journal the classification engine can classify on its own,
+		with one expense and VAT pair per VAT line
 		"""
+		accounts = []
+		for _line in range(vat_lines):
+			accounts.append({"account": self.expense_account.name, "debit_in_account_currency": 100})
+			accounts.append({"account": self.vat_account.name, "debit_in_account_currency": 15})
+		accounts.append({"account": self.bank_account.name, "credit_in_account_currency": 115 * vat_lines})
+
 		journal_entry = frappe.get_doc(
 			{
 				"doctype": "Journal Entry",
 				"voucher_type": "Journal Entry",
 				"company": self.company,
 				"posting_date": posting_date,
-				"accounts": [
-					{
-						"account": self.expense_account.name,
-						"debit_in_account_currency": 100,
-					},
-					{"account": self.vat_account.name, "debit_in_account_currency": 15},
-					{
-						"account": self.bank_account.name,
-						"credit_in_account_currency": 115,
-					},
-				],
+				"accounts": accounts,
 			}
 		)
 		journal_entry.insert()
