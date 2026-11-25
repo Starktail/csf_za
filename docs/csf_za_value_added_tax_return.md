@@ -86,3 +86,31 @@ To verify the amount in any field, click the **magnifying glass icon (🔍)** ne
 ### 2.4. Submitting the Return
 
 Once you have classified all transactions and are satisfied with the totals on the form, you can **Submit** the document. This will lock the return and prevent further changes. You can now use the information on this form to complete your official VAT 201 filing with SARS.
+
+**Transactions posted after the return was created**
+
+Nothing stops an invoice or journal from being posted into the return's period while you are still classifying. Such a transaction never reaches the **Transactions** table, so the return would no longer match the ledger. When you click **Submit**, the system therefore checks for VAT-related transactions that:
+
+*   are posted between **Date From** and **Date To** (transactions from a previous period are not part of this check),
+*   were created after the return was created - for an amended return, after the original return was created, and
+*   are not already in the **Transactions** table.
+
+Cancelled transactions are ignored. If any are found, a dialog lists each one with its posting date, who posted it and when. You can then:
+
+*   **Append to return** — adds them to the **Transactions** table and saves. The return stays in draft, and existing rows and classifications are left as they are. Review the new rows, classify any that are unclassified, and submit again.
+*   **Submit anyway** — submits the return without them.
+*   Close the dialog to cancel the submit.
+
+Whenever a return is submitted with such transactions, from the form or any other way, a permanent entry listing every one of them is added to the return's activity timeline. It cannot be edited or deleted from the timeline.
+
+To look before you submit, click **Check for late transactions** on a draft return once its transactions have been fetched. It shows the same list, with **Append to return** as the only action.
+
+This check detects late transactions; it does not stop anyone from posting into a period, before or after the return is submitted.
+
+**Returns with an empty Transactions table**
+
+A return whose **Transactions** table is empty cannot be submitted while the ledger holds VAT-related transactions in its period — click **Get transactions for period** first. A return for a period with no VAT activity at all (a nil return) submits as normal.
+
+**When the check is skipped**
+
+The check needs the company's **Value-added Tax Return Settings** with at least one tax account. Without them it is skipped, the return submits as before, and the form shows an orange alert.
