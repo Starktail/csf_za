@@ -26,15 +26,28 @@ CURRENT_PERIOD = {
 }
 
 
-class TestValueaddedTaxReturnDeferral(FrappeTestCase):
+class ValueAddedTaxReturnFixtures:
+	"""
+	Accounts, settings and ledger helpers shared by the Value-added Tax Return suites.
+	Mix in ahead of FrappeTestCase, which only rolls back at class cleanup.
+	"""
+
+	company = "_Test Company"
+	truncated_doctypes = (
+		"GL Entry",
+		"Journal Entry",
+		"Value-added Tax Return GL Entry",
+		"Value-added Tax Return",
+	)
+
 	def setUp(self):
-		frappe.db.delete("GL Entry")
-		frappe.db.delete("Journal Entry")
-		frappe.db.delete("Value-added Tax Return GL Entry")
-		frappe.db.delete("Value-added Tax Return")
+		for doctype in self.truncated_doctypes:
+			frappe.db.delete(doctype)
 
-		self.company = "_Test Company"
+		self.create_accounts()
+		self.setup_settings()
 
+	def create_accounts(self):
 		self.vat_account = create_account("VAT Test", "Tax Assets - _TC", self.company, account_type="Tax")
 		self.bank_account = create_account(
 			"Bank Test", "Current Assets - _TC", self.company, account_type="Bank"
@@ -49,8 +62,6 @@ class TestValueaddedTaxReturnDeferral(FrappeTestCase):
 			"Input - C Other goods supplied to you (excl capital goods)"
 		)
 		self.expense_account.save()
-
-		self.setup_settings()
 
 	def setup_settings(self):
 		"""
@@ -71,32 +82,24 @@ class TestValueaddedTaxReturnDeferral(FrappeTestCase):
 		settings.deferral_lookback_months = 12
 		settings.save()
 
-	def set_lookback_months(self, months):
-		settings = frappe.get_doc("Value-added Tax Return Settings", self.company)
-		settings.deferral_lookback_months = months
-		settings.save()
+	def create_journal_entry(self, posting_date, vat_lines=1):
+		"""
+		A submitted VAT-bearing journal the classification engine can classify on its own,
+		with one expense and VAT pair per VAT line
+		"""
+		accounts = []
+		for _line in range(vat_lines):
+			accounts.append({"account": self.expense_account.name, "debit_in_account_currency": 100})
+			accounts.append({"account": self.vat_account.name, "debit_in_account_currency": 15})
+		accounts.append({"account": self.bank_account.name, "credit_in_account_currency": 115 * vat_lines})
 
-	def create_journal_entry(self, posting_date):
-		"""
-		A submitted VAT-bearing journal the classification engine can classify on its own
-		"""
 		journal_entry = frappe.get_doc(
 			{
 				"doctype": "Journal Entry",
 				"voucher_type": "Journal Entry",
 				"company": self.company,
 				"posting_date": posting_date,
-				"accounts": [
-					{
-						"account": self.expense_account.name,
-						"debit_in_account_currency": 100,
-					},
-					{"account": self.vat_account.name, "debit_in_account_currency": 15},
-					{
-						"account": self.bank_account.name,
-						"credit_in_account_currency": 115,
-					},
-				],
+				"accounts": accounts,
 			}
 		)
 		journal_entry.insert()
@@ -114,9 +117,6 @@ class TestValueaddedTaxReturnDeferral(FrappeTestCase):
 		)
 		vat_return.insert()
 		return vat_return
-
-	def fetch_voucher_numbers(self, vat_return):
-		return {entry.get("voucher_no") for entry in vat_return.get_gl_entries()}
 
 	def populate(self, vat_return):
 		"""
@@ -139,6 +139,16 @@ class TestValueaddedTaxReturnDeferral(FrappeTestCase):
 			)
 		vat_return.save()
 		return vat_return
+
+
+class TestValueaddedTaxReturnDeferral(ValueAddedTaxReturnFixtures, FrappeTestCase):
+	def set_lookback_months(self, months):
+		settings = frappe.get_doc("Value-added Tax Return Settings", self.company)
+		settings.deferral_lookback_months = months
+		settings.save()
+
+	def fetch_voucher_numbers(self, vat_return):
+		return {entry.get("voucher_no") for entry in vat_return.get_gl_entries()}
 
 	def create_prior_return_holding(self, journal_entry, docstatus):
 		"""

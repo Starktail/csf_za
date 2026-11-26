@@ -7,6 +7,7 @@ from frappe.model.document import Document
 from frappe.utils import add_months, cint, getdate
 from pypika import Case
 
+from csf_za.tax_compliance.doctype.value_added_tax_return.late_entries import LateEntryCheck
 from csf_za.tax_compliance.doctype.value_added_tax_return_settings.value_added_tax_return_settings import (
 	VAT_RETURN_SETTING_FIELD_MAP,
 )
@@ -163,9 +164,27 @@ class ValueaddedTaxReturn(Document):
 		# Calculate final amount
 		self.total_vat_payable_refundable = self.total_output_tax - self.total_input_tax
 
+	def before_submit(self):
+		self.validate_transactions_retrieved()
+		self.validate_all_transactions_classified()
+
 	def on_submit(self):
+		LateEntryCheck(self).record()
+
+	def validate_transactions_retrieved(self):
 		"""
-		Validate when document is submitted
+		Block an unprepared return, whose missing entries the late-entry check cannot see
+		"""
+		if self.gl_entries:
+			return
+
+		check = LateEntryCheck(self)
+		if check.can_run and check.ledger_has_transactions():
+			frappe.throw(_("Retrieve transactions for the period before submitting"))
+
+	def validate_all_transactions_classified(self):
+		"""
+		Block submit while any active transaction is unclassified
 		"""
 		unclassified = [row for row in self.gl_entries if not row.classification and not row.is_cancelled]
 		if len(unclassified) > 0:
@@ -228,28 +247,12 @@ class ValueaddedTaxReturn(Document):
 			or (entry.voucher_type, entry.voucher_no) not in returned_vouchers
 		]
 
-	@frappe.whitelist()
-	def get_gl_entries(self):
+	@property
+	def classified_accounts(self):
 		"""
-		Retrieve journal entries for linked accounts
+		Accounts whose Journal Entry legs carry a VAT return classification
 		"""
-		vat_return_settings = frappe.get_cached_doc("Value-added Tax Return Settings", self.company)
-
-		gle = frappe.qb.DocType("GL Entry")
-		je = frappe.qb.DocType("Journal Entry")
-		jea = frappe.qb.DocType("Journal Entry Account")
-		si = frappe.qb.DocType("Sales Invoice")
-		sitc = frappe.qb.DocType("Sales Taxes and Charges")
-		pi = frappe.qb.DocType("Purchase Invoice")
-		pitc = frappe.qb.DocType("Purchase Taxes and Charges")
-		expense_claims_available = frappe.db.table_exists("Expense Claim")
-		if expense_claims_available:
-			ec = frappe.qb.DocType("Expense Claim")
-			ectc = frappe.qb.DocType("Expense Taxes and Charges")
-
-		tax_accounts = [row.account for row in vat_return_settings.tax_accounts]
-
-		classified_accounts = frappe.get_all(
+		return frappe.get_all(
 			"Account",
 			filters={"company": self.company},
 			or_filters=[
@@ -258,6 +261,13 @@ class ValueaddedTaxReturn(Document):
 			],
 			pluck="name",
 		)
+
+	def build_account_condition(self, gle, si, classified_accounts):
+		"""
+		The VAT-impacting ledger legs, shared by the transaction fetch and the late-entry check
+		"""
+		vat_return_settings = frappe.get_cached_doc("Value-added Tax Return Settings", self.company)
+		tax_accounts = [row.account for row in vat_return_settings.tax_accounts]
 
 		account_condition = gle.account.isin(tax_accounts) | (
 			(gle.voucher_type == "Sales Invoice")
@@ -277,6 +287,28 @@ class ValueaddedTaxReturn(Document):
 			account_condition = account_condition | (
 				(gle.voucher_type == "Journal Entry") & gle.account.isin(classified_accounts)
 			)
+
+		return account_condition
+
+	@frappe.whitelist()
+	def get_gl_entries(self):
+		"""
+		Retrieve journal entries for linked accounts
+		"""
+		gle = frappe.qb.DocType("GL Entry")
+		je = frappe.qb.DocType("Journal Entry")
+		jea = frappe.qb.DocType("Journal Entry Account")
+		si = frappe.qb.DocType("Sales Invoice")
+		sitc = frappe.qb.DocType("Sales Taxes and Charges")
+		pi = frappe.qb.DocType("Purchase Invoice")
+		pitc = frappe.qb.DocType("Purchase Taxes and Charges")
+		expense_claims_available = frappe.db.table_exists("Expense Claim")
+		if expense_claims_available:
+			ec = frappe.qb.DocType("Expense Claim")
+			ectc = frappe.qb.DocType("Expense Taxes and Charges")
+
+		classified_accounts = self.classified_accounts
+		account_condition = self.build_account_condition(gle, si, classified_accounts)
 
 		query = (
 			frappe.qb.from_(gle)
@@ -355,6 +387,22 @@ class ValueaddedTaxReturn(Document):
 
 		return self.process_gl_entries(result, classified_accounts=classified_accounts)
 
+	@frappe.whitelist(methods=["POST"])
+	def get_late_entry_summary(self):
+		return LateEntryCheck(self).summary()
+
+	@frappe.whitelist(methods=["POST"])
+	def get_late_gl_entries(self):
+		"""
+		Classified rows for every late voucher, not just the dialog's capped list
+		"""
+		late_vouchers = LateEntryCheck(self).late_vouchers
+		return [
+			entry
+			for entry in self.get_gl_entries()
+			if (entry.voucher_type, entry.voucher_no) in late_vouchers
+		]
+
 	def process_gl_entries(self, gl_entries, classified_accounts=None):
 		"""
 		Perform classification for each journal entry:
@@ -366,15 +414,7 @@ class ValueaddedTaxReturn(Document):
 		tax_accounts = [row.account for row in vat_return_settings.tax_accounts]
 
 		if classified_accounts is None:
-			classified_accounts = frappe.get_all(
-				"Account",
-				filters={"company": self.company},
-				or_filters=[
-					["custom_vat_return_debit_classification", "not in", ["", None]],
-					["custom_vat_return_credit_classification", "not in", ["", None]],
-				],
-				pluck="name",
-			)
+			classified_accounts = self.classified_accounts
 
 		taxes_and_charges_map = [
 			entry for entry in VAT_RETURN_SETTING_FIELD_MAP if vat_return_settings.get(entry["field_name"])
