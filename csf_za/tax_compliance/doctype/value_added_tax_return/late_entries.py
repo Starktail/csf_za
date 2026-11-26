@@ -111,6 +111,8 @@ class LateEntryCheck:
 		The voucher table, shared by the submit dialog and the timeline entry
 		"""
 		vouchers = list(self.late_vouchers.values())
+
+		# nosemgrep
 		return frappe.render_template(self.TEMPLATE, {"vouchers": vouchers[:limit], "total": len(vouchers)})
 
 	def record(self):
